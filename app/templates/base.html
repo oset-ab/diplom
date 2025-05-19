@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Система Детекции Объектов{% endblock %}</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    {% block head_extra %}{% endblock %}
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-light bg-light">
+        <a class="navbar-brand" href="{{ url_for('main.welcome') }}">Детектор</a>
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarNav">
+            <ul class="navbar-nav mr-auto">
+                {% if 'user_id' in session %}
+                <li class="nav-item {% if request.endpoint == 'main.dashboard' %}active{% endif %}">
+                    <a class="nav-link" href="{{ url_for('main.dashboard') }}">Панель управления</a>
+                </li>
+                <li class="nav-item {% if request.endpoint == 'main.history_page' %}active{% endif %}">
+                    <a class="nav-link" href="{{ url_for('main.history_page') }}">История</a>
+                </li>
+                {% if session.get('is_admin') %}
+                <li class="nav-item {% if request.endpoint.startswith('main.admin_') %}active{% endif %}">
+                    <a class="nav-link" href="{{ url_for('main.admin_dashboard') }}">Админ-панель</a>
+                </li>
+                {% endif %}
+                {% endif %}
+            </ul>
+            <ul class="navbar-nav">
+                {% if 'user_id' in session %}
+                    <li class="nav-item">
+                        <span class="navbar-text mr-3">Привет, {{ session.username }}!</span>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('main.logout') }}">Выйти</a>
+                    </li>
+                {% else %}
+                    <li class="nav-item {% if request.endpoint == 'main.login' %}active{% endif %}">
+                        <a class="nav-link" href="{{ url_for('main.login') }}">Войти</a>
+                    </li>
+                    <li class="nav-item {% if request.endpoint == 'main.register' %}active{% endif %}">
+                        <a class="nav-link" href="{{ url_for('main.register') }}">Регистрация</a>
+                    </li>
+                {% endif %}
+            </ul>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+                            <span aria-hidden="true">×</span>
+                        </button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+        {% block content %}{% endblock %}
+    </div>
+
+    <footer class="footer mt-auto py-3 bg-light">
+        <div class="container text-center">
+            <span class="text-muted">Система детекции объектов © {{ now.year if now else 2024 }}</span>
+        </div>
+    </footer>
+
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

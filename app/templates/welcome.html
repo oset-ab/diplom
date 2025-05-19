@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+
+{% block title %}Добро пожаловать{% endblock %}
+
+{% block content %}
+<div class="jumbotron">
+    <h1 class="display-4">Система Детекции Объектов</h1>
+    <p class="lead">Анализируйте изображения, видео и живые потоки для обнаружения объектов с помощью YOLO.</p>
+    <hr class="my-4">
+    {% if 'user_id' not in session %}
+    <p>Войдите или зарегистрируйтесь, чтобы начать.</p>
+    <a class="btn btn-primary btn-lg" href="{{ url_for('main.login') }}" role="button">Войти</a>
+    <a class="btn btn-secondary btn-lg" href="{{ url_for('main.register') }}" role="button">Регистрация</a>
+    {% else %}
+    <p>Вы вошли как {{ session.username }}. Перейдите на панель управления.</p>
+    <a class="btn btn-primary btn-lg" href="{{ url_for('main.dashboard') }}" role="button">Панель управления</a>
+    {% endif %}
+</div>
+{% endblock %}

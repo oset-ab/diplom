@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+
+{% block title %}Панель управления{% endblock %}
+
+{% block content %}
+<h2>Панель управления</h2>
+<p>Добро пожаловать, {{ username }}!</p>
+
+{% if is_admin %}
+    <div class="alert alert-info" role="alert">
+      Вы вошли как администратор. <a href="{{ url_for('main.admin_dashboard') }}" class="alert-link">Перейти в админ-панель</a>.
+    </div>
+{% endif %}
+
+<div class="row">
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                Загрузить медиа для анализа
+            </div>
+            <div class="card-body">
+                <form id="uploadForm" method="post" enctype="multipart/form-data">
+                    <div class="form-group">
+                        <label for="mediaFile">Выберите изображение или видео:</label>
+                        <div class="custom-file">
+                            <input type="file" class="custom-file-input" id="mediaFile" name="media" accept="image/*,video/*" required>
+                            <label class="custom-file-label" for="mediaFile" data-browse="Обзор">Выберите файл...</label>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Загрузить и анализировать</button>
+                </form>
+                <div id="uploadResult" class="mt-3">
+                    <!-- Результаты загрузки будут здесь -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                Видеопоток с камеры
+            </div>
+            <div class="card-body text-center">
+                <div id="streamControls" class="mb-2">
+                     <button id="startStreamBtn" class="btn btn-success">Начать стрим</button>
+                     <button id="stopStreamBtn" class="btn btn-danger" style="display:none;">Остановить стрим</button>
+                </div>
+                <img id="videoFeed" src="#" alt="Video Stream" class="img-fluid mt-2" style="display:none; border:1px solid #ccc; max-height: 480px;">
+                <div id="streamInfo" class="mt-2"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Script для отображения имени файла в custom-file-input
+    const mediaFileInput = document.getElementById('mediaFile');
+    if (mediaFileInput) {
+        mediaFileInput.addEventListener('change', function(e){
+            var fileName = e.target.files[0].name;
+            var nextSibling = e.target.nextElementSibling;
+            nextSibling.innerText = fileName;
+        });
+    }
+
+    const uploadForm = document.getElementById('uploadForm');
+    const uploadResult = document.getElementById('uploadResult');
+    const startStreamBtn = document.getElementById('startStreamBtn');
+    const stopStreamBtn = document.getElementById('stopStreamBtn');
+    const videoFeedImg = document.getElementById('videoFeed');
+    const streamInfo = document.getElementById('streamInfo');
+
+    if (uploadForm) {
+        uploadForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const formData = new FormData(this);
+            uploadResult.innerHTML = '<div class="d-flex align-items-center"><div class="spinner-border text-primary spinner-border-sm" role="status"><span class="sr-only">Загрузка...</span></div> <p class="text-info d-inline-block ml-2 mb-0">Обработка...</p></div>';
+
+            try {
+                const response = await fetch("{{ url_for('main.upload_media') }}", {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+
+                if (response.ok) {
+                    let resultHtml = `<div class="alert alert-success"><strong>${data.message}</strong></div>`;
+                    resultHtml += `<p>Оригинальный файл: ${data.original_filename}</p>`;
+                    resultHtml += `<p>Обнаруженные объекты: ${data.detected_objects || 'Нет'}</p>`;
+                    resultHtml += `<p>Время обработки: ${data.processing_time} сек.</p>`;
+                    if (data.result_url) {
+                        resultHtml += `<a href="${data.result_url}" target="_blank" title="Открыть результат в новой вкладке">
+                                           <img src="${data.result_url}" alt="Результат" class="img-fluid" style="max-height: 200px; border: 1px solid #ddd; margin-top: 10px;">
+                                       </a>`;
+                    }
+                     resultHtml += `<p class="mt-2"><a href="{{ url_for('main.history_page') }}" class="btn btn-sm btn-outline-info">Перейти в историю</a></p>`
+                    uploadResult.innerHTML = resultHtml;
+                    mediaFileInput.value = ""; // Сбросить значение input file
+                    mediaFileInput.nextElementSibling.innerText = "Выберите файл..."; // Сбросить лейбл
+                } else {
+                    uploadResult.innerHTML = `<div class="alert alert-danger">Ошибка: ${data.error || 'Неизвестная ошибка'}</div>`;
+                }
+            } catch (error) {
+                uploadResult.innerHTML = `<div class="alert alert-danger">Ошибка сети или сервера: ${error.message}</div>`;
+            }
+        });
+    }
+
+    if (startStreamBtn) {
+        startStreamBtn.addEventListener('click', function() {
+            videoFeedImg.src = "{{ url_for('main.video_feed') }}?" + new Date().getTime();
+            videoFeedImg.style.display = 'block';
+            startStreamBtn.style.display = 'none';
+            stopStreamBtn.style.display = 'inline-block';
+            streamInfo.innerHTML = '<p class="text-info">Стрим активен...</p>';
+        });
+    }
+
+    if (stopStreamBtn) {
+        stopStreamBtn.addEventListener('click', async function() {
+            videoFeedImg.src = "#";
+            videoFeedImg.style.display = 'none';
+            stopStreamBtn.style.display = 'none';
+            startStreamBtn.style.display = 'inline-block';
+            streamInfo.innerHTML = '<div class="d-flex align-items-center"><div class="spinner-border text-secondary spinner-border-sm" role="status"></div> <p class="text-secondary d-inline-block ml-2 mb-0">Остановка стрима...</p></div>';
+
+            try {
+                const response = await fetch("{{ url_for('main.end_stream_session') }}", { method: 'POST' });
+                const data = await response.json();
+                if (response.ok) {
+                    if (data.status === 'success') {
+                         streamInfo.innerHTML = `<p class="text-success">Стрим остановлен. Длительность: ${data.duration} сек. Данные сохранены (если были детекции).</p>`;
+                    } else {
+                        streamInfo.innerHTML = `<p class="text-info">${data.message || 'Стрим остановлен.'}</p>`;
+                    }
+
+                } else {
+                    streamInfo.innerHTML = `<p class="text-warning">Стрим остановлен (возможно, с ошибкой: ${data.message || response.statusText}).</p>`;
+                }
+            } catch (error) {
+                 streamInfo.innerHTML = `<p class="text-danger">Ошибка при остановке стрима: ${error.message}</p>`;
+            }
+        });
+    }
+});
+</script>
+{% endblock %}

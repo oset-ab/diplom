@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+
+{% block title %}История обработок - {{ target_user.username }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center">
+    <h2>История обработок пользователя: <span class="text-primary">{{ target_user.username }}</span></h2>
+    <a href="{{ url_for('main.admin_dashboard') }}" class="btn btn-outline-secondary">« К списку пользователей</a>
+</div>
+<hr>
+
+<div class="my-3 p-3 bg-light rounded shadow-sm">
+    <h5 class="border-bottom border-gray pb-2 mb-3">Действия с отчетами</h5>
+    <a href="{{ url_for('main.admin_download_user_report', user_id=target_user.id) }}" class="btn btn-success">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-file-earmark-spreadsheet-fill" viewBox="0 0 16 16">
+          <path d="M6 12v-2h3v2H6z"/>
+          <path d="M9.293 0H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V4.707A1 1 0 0 0 13.707 4L10 .293A1 1 0 0 0 9.293 0zM9.5 3.5v-2l3 3h-2a1 1 0 0 1-1-1zM3 9h10v1h-3v2h3v1h-3v2H9v-2H6v2H5v-2H3v-1h2v-2H3V9z"/>
+        </svg>
+        Скачать полный CSV отчет по пользователю
+    </a>
+</div>
+
+
+<form method="GET" action="{{ url_for('main.admin_user_history', user_id=target_user.id) }}" class="form-inline mb-3 p-3 bg-light rounded shadow-sm">
+    <div class="form-group mr-sm-3 mb-2">
+        <label for="media_type_filter" class="mr-2">Тип медиа:</label>
+        <select name="media_type" id="media_type_filter" class="form-control custom-select">
+            <option value="">Все типы</option>
+            <option value="image" {% if current_media_type_filter == 'image' %}selected{% endif %}>Изображение</option>
+            <option value="video" {% if current_media_type_filter == 'video' %}selected{% endif %}>Видео</option>
+            <option value="stream_capture" {% if current_media_type_filter == 'stream_capture' %}selected{% endif %}>Захват стрима</option>
+        </select>
+    </div>
+    <button type="submit" class="btn btn-primary mb-2">Фильтровать</button>
+    {% if current_media_type_filter %}
+        <a href="{{ url_for('main.admin_user_history', user_id=target_user.id) }}" class="btn btn-secondary mb-2 ml-2">Сбросить фильтр</a>
+    {% endif %}
+</form>
+
+
+{% if not media_items and (not pagination or not pagination.items) %}
+<div class="alert alert-info" role="alert">
+    У пользователя {{ target_user.username }} нет обработанных файлов, соответствующих фильтру.
+</div>
+{% else %}
+<div class="list-group">
+    {% for item_data in media_items %}
+    <div class="list-group-item list-group-item-action flex-column align-items-start mb-3 shadow-sm">
+        <div class="d-flex w-100 justify-content-between">
+            <h5 class="mb-1">
+                Файл: {{ item_data.media.filename if item_data.media.filename else "Запись стрима без имени файла" }}
+                {% if item_data.is_stream_capture %}<span class="badge badge-info ml-2">Стрим</span>{% endif %}
+            </h5>
+            <small class="text-muted">{{ item_data.media.upload_time.strftime('%Y-%m-%d %H:%M:%S') }}</small>
+        </div>
+        <p class="mb-1"><span class="font-weight-bold">Тип:</span> {{ item_data.media.media_type_rus if item_data.media.media_type_rus else item_data.media.media_type }}</p>
+        <p class="mb-1"><span class="font-weight-bold">Обнаружено:</span> {{ item_data.detections_summary_str }}</p>
+
+        {% if item_data.first_result_frame %}
+        <div class="mt-2">
+            <a href="{{ url_for('main.results_file', filename=item_data.first_result_frame) }}" target="_blank" title="Открыть результат">
+                <img src="{{ url_for('main.results_file', filename=item_data.first_result_frame) }}" alt="Результат обработки" class="img-thumbnail" style="max-height: 150px; max-width: 200px;">
+            </a>
+        </div>
+        {% elif item_data.is_stream_capture %}
+         <p class="mt-2"><small class="text-muted">Предпросмотр кадра для этой записи стрима недоступен.</small></p>
+        {% else %}
+        <p class="mt-2"><small class="text-muted">Превью результата недоступно.</small></p>
+        {% endif %}
+
+        <div class="mt-2">
+             <a href="{{ url_for('main.download_media_report', media_id=item_data.media.id) }}" class="btn btn-sm btn-outline-secondary">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-download" viewBox="0 0 16 16">
+                  <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
+                  <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z"/>
+                </svg>
+                Отчет по файлу (CSV)
+            </a>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+{% if pagination and pagination.pages > 1 %}
+<nav aria-label="Page navigation" class="mt-4">
+    <ul class="pagination justify-content-center">
+        {% set base_url_params = {'user_id': target_user.id} %}
+        {% if current_media_type_filter %}
+            {% set _ = base_url_params.update({'media_type': current_media_type_filter}) %}
+        {% endif %}
+
+        {% if pagination.has_prev %}
+        <li class="page-item"><a class="page-link" href="{{ url_for('main.admin_user_history', page=pagination.prev_num, **base_url_params) }}">Предыдущая</a></li>
+        {% else %}
+        <li class="page-item disabled"><span class="page-link">Предыдущая</span></li>
+        {% endif %}
+
+        {% for page_num in pagination.iter_pages(left_edge=1, right_edge=1, left_current=1, right_current=2) %}
+            {% if page_num %}
+                {% if pagination.page == page_num %}
+                <li class="page-item active"><span class="page-link">{{ page_num }}</span></li>
+                {% else %}
+                <li class="page-item"><a class="page-link" href="{{ url_for('main.admin_user_history', page=page_num, **base_url_params) }}">{{ page_num }}</a></li>
+                {% endif %}
+            {% else %}
+            <li class="page-item disabled"><span class="page-link">...</span></li>
+            {% endif %}
+        {% endfor %}
+
+        {% if pagination.has_next %}
+        <li class="page-item"><a class="page-link" href="{{ url_for('main.admin_user_history', page=pagination.next_num, **base_url_params) }}">Следующая</a></li>
+        {% else %}
+        <li class="page-item disabled"><span class="page-link">Следующая</span></li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+
+{% endif %} {# конец if not media_items #}
+{% endblock %}

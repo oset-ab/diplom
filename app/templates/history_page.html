@@ -11,8 +11,8 @@
         <select name="media_type" id="media_type_filter" class="form-control custom-select">
             <option value="">Все типы</option>
             <option value="image" {% if current_media_type_filter == 'image' %}selected{% endif %}>Изображение</option>
-            <option value="video" {% if current_media_type_filter == 'video' %}selected{% endif %}>Видео</option>
-            <option value="stream_capture" {% if current_media_type_filter == 'stream_capture' %}selected{% endif %}>Захват стрима</option>
+            <option value="video" {% if current_media_type_filter == 'video' %}selected{% endif %}>Видео (загруженное)</option>
+            <option value="stream_capture" {% if current_media_type_filter == 'stream_capture' %}selected{% endif %}>Видео (захват стрима)</option>
         </select>
     </div>
     <button type="submit" class="btn btn-primary mb-2">Фильтровать</button>
@@ -20,7 +20,6 @@
         <a href="{{ url_for('main.history_page') }}" class="btn btn-secondary mb-2 ml-2">Сбросить фильтр</a>
     {% endif %}
 </form>
-
 
 {% if not media_items and (not pagination or not pagination.items) %}
 <div class="alert alert-info" role="alert">
@@ -32,24 +31,40 @@
     <div class="list-group-item list-group-item-action flex-column align-items-start mb-3 shadow-sm">
         <div class="d-flex w-100 justify-content-between">
             <h5 class="mb-1">
-                Файл: {{ item_data.media.filename if item_data.media.filename else "Запись стрима без имени файла" }}
-                {% if item_data.is_stream_capture %}<span class="badge badge-info ml-2">Стрим</span>{% endif %}
+                Файл: {{ item_data.media.filename }}
+                {% if item_data.media.media_type == 'stream_capture' %}<span class="badge badge-info ml-2">Видео (Стрим)</span>
+                {% elif item_data.media.media_type == 'video' %}<span class="badge badge-primary ml-2">Видео (Загрузка)</span>
+                {% elif item_data.media.media_type == 'image' %}<span class="badge badge-secondary ml-2">Изображение</span>
+                {% endif %}
             </h5>
             <small class="text-muted">{{ item_data.media.upload_time.strftime('%Y-%m-%d %H:%M:%S') }}</small>
         </div>
-        <p class="mb-1"><span class="font-weight-bold">Тип:</span> {{ item_data.media.media_type_rus if item_data.media.media_type_rus else item_data.media.media_type }}</p>
-        <p class="mb-1"><span class="font-weight-bold">Обнаружено:</span> {{ item_data.detections_summary_str }}</p>
+        <p class="mb-1"><span class="font-weight-bold">Тип:</span> {{ item_data.media.media_type_rus }}</p>
+        <p class="mb-1"><span class="font-weight-bold">Обнаружено (сводка):</span> {{ item_data.detections_summary_str }}</p>
 
-        {% if item_data.first_result_frame %}
-        <div class="mt-2">
-            <a href="{{ url_for('main.results_file', filename=item_data.first_result_frame) }}" target="_blank" title="Открыть результат">
-                <img src="{{ url_for('main.results_file', filename=item_data.first_result_frame) }}" alt="Результат обработки" class="img-thumbnail" style="max-height: 150px; max-width: 200px;">
-            </a>
-        </div>
-        {% elif item_data.is_stream_capture %}
-         <p class="mt-2"><small class="text-muted">Предпросмотр кадра для этой записи стрима недоступен.</small></p>
+        {# Display logic for different types of results #}
+        {% if item_data.media.media_type == 'image' and item_data.preview_image_file %}
+            <div class="mt-2">
+                <p class="font-weight-bold mb-1">Результат (изображение):</p>
+                <a href="{{ url_for('main.results_file', filename=item_data.preview_image_file) }}" target="_blank" title="Открыть результат">
+                    <img src="{{ url_for('main.results_file', filename=item_data.preview_image_file) }}" alt="Результат обработки изображения" class="img-thumbnail" style="max-height: 150px; max-width: 200px;">
+                </a>
+            </div>
+        {% elif (item_data.media.media_type == 'video' or item_data.media.media_type == 'stream_capture') and item_data.associated_video_file %}
+            <div class="mt-2">
+                <p class="font-weight-bold mb-1">Результат (видео):</p>
+                <a href="{{ url_for('main.results_file', filename=item_data.associated_video_file) }}" target="_blank" class="btn btn-sm btn-outline-primary mr-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-play-btn-fill" viewBox="0 0 16 16"><path d="M0 12V4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2zm6.79-6.907A.5.5 0 0 0 6 5.5v5a.5.5 0 0 0 .79.407l3.5-2.5a.5.5 0 0 0 0-.814l-3.5-2.5z"/></svg>
+                    {{ item_data.associated_video_file }}
+                </a>
+                {# Optional: Embed a small player preview #}
+                 <video width="320" height="240" controls class="mt-1 img-thumbnail" style="max-height: 150px; max-width: 200px; object-fit:cover;">
+                    <source src="{{ url_for('main.results_file', filename=item_data.associated_video_file) }}#t=0.5" type="video/mp4"> {# #t=0.5 to show first frame #}
+                    Ваш браузер не поддерживает тег video.
+                </video>
+            </div>
         {% else %}
-        <p class="mt-2"><small class="text-muted">Превью результата недоступно.</small></p>
+            <p class="mt-2"><small class="text-muted">Превью или обработанный файл для этого элемента недоступны.</small></p>
         {% endif %}
 
         <div class="mt-2">
@@ -68,6 +83,7 @@
 {% if pagination and pagination.pages > 1 %}
 <nav aria-label="Page navigation" class="mt-4">
     <ul class="pagination justify-content-center">
+        {# ... (pagination logic - no changes needed here) ... #}
         {% if pagination.has_prev %}
         <li class="page-item"><a class="page-link" href="{{ url_for('main.history_page', page=pagination.prev_num, media_type=current_media_type_filter) }}">Предыдущая</a></li>
         {% else %}
@@ -95,5 +111,5 @@
 </nav>
 {% endif %}
 
-{% endif %} {# конец if not media_items #}
+{% endif %}
 {% endblock %}

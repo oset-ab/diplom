@@ -4,9 +4,9 @@
 
 {% block content %}
 <h2>Панель управления</h2>
-<p>Добро пожаловать, {{ username }}!</p>
+<p>Добро пожаловать, {{ session.username }}!</p>
 
-{% if is_admin %}
+{% if session.is_admin %}
     <div class="alert alert-info" role="alert">
       Вы вошли как администратор. <a href="{{ url_for('main.admin_dashboard') }}" class="alert-link">Перейти в админ-панель</a>.
     </div>
@@ -21,16 +21,16 @@
             <div class="card-body">
                 <form id="uploadForm" method="post" enctype="multipart/form-data">
                     <div class="form-group">
-                        <label for="mediaFile">Выберите изображение или видео:</label>
+                        <label for="mediaFile">Выберите изображение или видео (PNG, JPG, MP4, AVI, MOV, MKV):</label>
                         <div class="custom-file">
-                            <input type="file" class="custom-file-input" id="mediaFile" name="media" accept="image/*,video/*" required>
+                            <input type="file" class="custom-file-input" id="mediaFile" name="media" accept="image/png,image/jpeg,video/mp4,video/x-msvideo,video/quicktime,video/x-matroska" required>
                             <label class="custom-file-label" for="mediaFile" data-browse="Обзор">Выберите файл...</label>
                         </div>
                     </div>
                     <button type="submit" class="btn btn-primary">Загрузить и анализировать</button>
                 </form>
-                <div id="uploadResult" class="mt-3">
-                    <!-- Результаты загрузки будут здесь -->
+                <div id="uploadResultDiv" class="mt-3">
+                    <!-- Результаты загрузки и обработки будут здесь -->
                 </div>
             </div>
         </div>
@@ -46,8 +46,8 @@
                      <button id="startStreamBtn" class="btn btn-success">Начать стрим</button>
                      <button id="stopStreamBtn" class="btn btn-danger" style="display:none;">Остановить стрим</button>
                 </div>
-                <img id="videoFeed" src="#" alt="Video Stream" class="img-fluid mt-2" style="display:none; border:1px solid #ccc; max-height: 480px;">
-                <div id="streamInfo" class="mt-2"></div>
+                <img id="videoFeedImg" src="#" alt="Video Stream" class="img-fluid mt-2" style="display:none; border:1px solid #ccc; max-height: 480px; background-color: #f0f0f0;">
+                <div id="streamInfoDiv" class="mt-2"></div>
             </div>
         </div>
     </div>
@@ -59,28 +59,27 @@
 {{ super() }}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // Script для отображения имени файла в custom-file-input
     const mediaFileInput = document.getElementById('mediaFile');
     if (mediaFileInput) {
         mediaFileInput.addEventListener('change', function(e){
-            var fileName = e.target.files[0].name;
-            var nextSibling = e.target.nextElementSibling;
+            var fileName = e.target.files[0] ? e.target.files[0].name : "Выберите файл...";
+            var nextSibling = e.target.nextElementSibling; // The label
             nextSibling.innerText = fileName;
         });
     }
 
     const uploadForm = document.getElementById('uploadForm');
-    const uploadResult = document.getElementById('uploadResult');
-    const startStreamBtn = document.getElementById('startStreamBtn');
-    const stopStreamBtn = document.getElementById('stopStreamBtn');
-    const videoFeedImg = document.getElementById('videoFeed');
-    const streamInfo = document.getElementById('streamInfo');
+    const uploadResultDiv = document.getElementById('uploadResultDiv');
+
+    // For dynamically created elements for video processing
+    let videoProcessingProgressContainerDiv, videoProcessingResultContainerDiv, realtimeFrameImgTag, progressTextElement, progressBarContainerElement;
+
 
     if (uploadForm) {
         uploadForm.addEventListener('submit', async function(e) {
             e.preventDefault();
             const formData = new FormData(this);
-            uploadResult.innerHTML = '<div class="d-flex align-items-center"><div class="spinner-border text-primary spinner-border-sm" role="status"><span class="sr-only">Загрузка...</span></div> <p class="text-info d-inline-block ml-2 mb-0">Обработка...</p></div>';
+            uploadResultDiv.innerHTML = '<div class="d-flex align-items-center"><div class="spinner-border text-primary spinner-border-sm" role="status"></div> <p class="text-info d-inline-block ml-2 mb-0">Загрузка файла...</p></div>';
 
             try {
                 const response = await fetch("{{ url_for('main.upload_media') }}", {
@@ -90,61 +89,200 @@ document.addEventListener('DOMContentLoaded', function() {
                 const data = await response.json();
 
                 if (response.ok) {
-                    let resultHtml = `<div class="alert alert-success"><strong>${data.message}</strong></div>`;
-                    resultHtml += `<p>Оригинальный файл: ${data.original_filename}</p>`;
-                    resultHtml += `<p>Обнаруженные объекты: ${data.detected_objects || 'Нет'}</p>`;
-                    resultHtml += `<p>Время обработки: ${data.processing_time} сек.</p>`;
-                    if (data.result_url) {
-                        resultHtml += `<a href="${data.result_url}" target="_blank" title="Открыть результат в новой вкладке">
-                                           <img src="${data.result_url}" alt="Результат" class="img-fluid" style="max-height: 200px; border: 1px solid #ddd; margin-top: 10px;">
-                                       </a>`;
+                    if (data.media_type === 'image') {
+                        let resultHtml = `<div class="alert alert-success"><strong>${data.message}</strong></div>`;
+                        resultHtml += `<p>Оригинальный файл: ${data.original_filename}</p>`;
+                        resultHtml += `<p>Обнаруженные объекты: ${data.detected_objects || 'Нет'}</p>`;
+                        resultHtml += `<p>Время обработки: ${data.processing_time} сек.</p>`;
+                        if (data.result_url) {
+                            resultHtml += `<a href="${data.result_url}" target="_blank" title="Открыть результат в новой вкладке">
+                                               <img src="${data.result_url}" alt="Результат" class="img-fluid" style="max-height: 200px; border: 1px solid #ddd; margin-top: 10px;">
+                                           </a>`;
+                        }
+                        resultHtml += `<p class="mt-2"><a href="{{ url_for('main.history_page') }}" class="btn btn-sm btn-outline-info">Перейти в историю</a></p>`
+                        uploadResultDiv.innerHTML = resultHtml;
+                    } else if (data.media_type === 'video') {
+                        // Setup DOM for video processing feedback
+                        uploadResultDiv.innerHTML = `
+                            <div class="alert alert-info"><strong>${data.message}</strong><br>Оригинальный файл: ${data.original_filename}.</div>
+                            <div id="videoProcessingProgressContainer" class="mt-2">
+                                <div class="mb-2 text-center">
+                                    <img id="realtimeProcessedVideoFrame" src="#" alt="Обработка видео..." class="img-fluid" style="max-height: 240px; border: 1px solid #ccc; display: none; background-color: #e9ecef;">
+                                </div>
+                                <div id="progressText" class="small text-muted"></div>
+                                <div id="progressBarContainer" class="my-2" style="height: 20px;"></div>
+                            </div>
+                            <div id="videoProcessingResultContainer" class="mt-2"></div>`;
+
+                        realtimeFrameImgTag = document.getElementById('realtimeProcessedVideoFrame');
+                        progressTextElement = document.getElementById('progressText');
+                        progressBarContainerElement = document.getElementById('progressBarContainer');
+                        videoProcessingResultContainerDiv = document.getElementById('videoProcessingResultContainer');
+
+                        startVideoProcessingStream(data.processing_stream_url);
                     }
-                     resultHtml += `<p class="mt-2"><a href="{{ url_for('main.history_page') }}" class="btn btn-sm btn-outline-info">Перейти в историю</a></p>`
-                    uploadResult.innerHTML = resultHtml;
-                    mediaFileInput.value = ""; // Сбросить значение input file
-                    mediaFileInput.nextElementSibling.innerText = "Выберите файл..."; // Сбросить лейбл
+                    if (mediaFileInput) {
+                        mediaFileInput.value = "";
+                        mediaFileInput.nextElementSibling.innerText = "Выберите файл...";
+                    }
                 } else {
-                    uploadResult.innerHTML = `<div class="alert alert-danger">Ошибка: ${data.error || 'Неизвестная ошибка'}</div>`;
+                    uploadResultDiv.innerHTML = `<div class="alert alert-danger">Ошибка: ${data.error || 'Неизвестная ошибка'} (${response.status})</div>`;
                 }
             } catch (error) {
-                uploadResult.innerHTML = `<div class="alert alert-danger">Ошибка сети или сервера: ${error.message}</div>`;
+                console.error("Upload fetch error:", error);
+                uploadResultDiv.innerHTML = `<div class="alert alert-danger">Ошибка сети или сервера: ${error.message}</div>`;
             }
         });
     }
 
+    function startVideoProcessingStream(streamUrl) {
+        if (!progressTextElement || !progressBarContainerElement || !realtimeFrameImgTag || !videoProcessingResultContainerDiv) {
+            console.error("Required DOM elements for video processing feedback not found!");
+            uploadResultDiv.innerHTML += "<p class='text-danger'>Ошибка интерфейса для отображения прогресса.</p>";
+            return;
+        }
+        progressTextElement.innerHTML = '<div class="d-flex align-items-center"><div class="spinner-border text-primary spinner-border-sm"></div> <span class="ml-2">Видео обрабатывается, ожидайте...</span></div>';
+        progressBarContainerElement.innerHTML = '';
+        videoProcessingResultContainerDiv.innerHTML = '';
+        realtimeFrameImgTag.style.display = 'none'; // Hide until first frame
+
+        const eventSource = new EventSource(streamUrl);
+
+        eventSource.onmessage = function(event) { // Generic data messages
+            console.log("SSE (data):", event.data);
+            if (progressTextElement) { // Append general messages
+                 progressTextElement.innerHTML += `<p class="small text-muted mb-0">${event.data}</p>`;
+            }
+        };
+
+        eventSource.addEventListener('frame', function(event) {
+            if (realtimeFrameImgTag) {
+                try {
+                    const frameEventData = JSON.parse(event.data);
+                    realtimeFrameImgTag.src = 'data:image/jpeg;base64,' + frameEventData.image_data;
+                    if (realtimeFrameImgTag.style.display === 'none') {
+                        realtimeFrameImgTag.style.display = 'block';
+                    }
+                } catch (e) { console.error("Error processing 'frame' event data:", e); }
+            }
+        });
+
+        eventSource.addEventListener('progress', function(event) {
+            if (progressBarContainerElement && progressTextElement) {
+                try {
+                    const progressData = JSON.parse(event.data);
+                    progressBarContainerElement.innerHTML = `<div class="progress" style="height: 20px;">
+                        <div class="progress-bar" role="progressbar" style="width: ${progressData.percent}%;" aria-valuenow="${progressData.percent}" aria-valuemin="0" aria-valuemax="100">${progressData.percent.toFixed(1)}%</div>
+                        </div>`;
+                    progressTextElement.innerHTML = `<p class="small text-muted mb-0">Кадр ${progressData.frame} из ${progressData.total_frames}</p>`;
+                } catch(e) { progressTextElement.innerHTML = `<p class="small text-muted mb-0">${event.data}</p>`; }
+            }
+        });
+
+        eventSource.addEventListener('complete', function(event) {
+            eventSource.close();
+            if (progressTextElement) progressTextElement.innerHTML = '<p class="text-success font-weight-bold">Обработка видео завершена!</p>';
+            if (progressBarContainerElement) progressBarContainerElement.innerHTML = '';
+
+            if (videoProcessingResultContainerDiv) {
+                try {
+                    const eventData = JSON.parse(event.data);
+                    let resultHtml = `<h4>Результат обработки видео:</h4>`;
+                    resultHtml += `<p>Время обработки: ${eventData.processing_time != null ? eventData.processing_time.toFixed(2) : 'N/A'} сек.</p>`;
+                    if (eventData.result_url) {
+                        resultHtml += `<p>Обработанное видео: <a href="${eventData.result_url}" target="_blank">${eventData.result_video_filename}</a> (скачать/смотреть)</p>`;
+                        if(realtimeFrameImgTag) realtimeFrameImgTag.style.display = 'none';
+                        resultHtml += `<video controls width="100%" style="max-width:480px; max-height:320px;" class="mt-2 border">
+                                          <source src="${eventData.result_url}" type="video/mp4">
+                                          Ваш браузер не поддерживает тег video.
+                                      </video>`;
+                    }
+                    if (eventData.summary && typeof eventData.summary === 'object') {
+                        const summaryStr = Object.entries(eventData.summary).map(([key, value]) => `${key}(${value})`).join(', ');
+                        resultHtml += `<p>Обнаруженные объекты (всего): ${summaryStr || 'Нет'}</p>`;
+                    }
+                    resultHtml += `<p class="mt-3"><a href="{{ url_for('main.history_page') }}" class="btn btn-sm btn-outline-info">Перейти в историю</a></p>`;
+                    videoProcessingResultContainerDiv.innerHTML = resultHtml;
+                } catch (e) {
+                    console.error("Error parsing 'complete' event data:", e);
+                    videoProcessingResultContainerDiv.innerHTML = "<p class='text-warning'>Не удалось корректно отобразить результаты обработки видео.</p>";
+                }
+            }
+        });
+
+        eventSource.addEventListener('error', function(event) { // Specific server-sent error
+            let errorMsg = "Ошибка обработки видео на сервере.";
+            try {
+                const errorData = JSON.parse(event.data); // Expecting {"message": "..."}
+                if (errorData && errorData.message) errorMsg = errorData.message;
+            } catch(e) { /* Use default if not JSON or no message field */ }
+
+            if (progressTextElement) progressTextElement.innerHTML = `<p class="text-danger font-weight-bold">${errorMsg}</p>`;
+            if (progressBarContainerElement) progressBarContainerElement.innerHTML = '';
+            if (realtimeFrameImgTag) realtimeFrameImgTag.style.display = 'none';
+            eventSource.close();
+        });
+
+        eventSource.onerror = function(err) { // General EventSource connection error
+            console.error("EventSource general connection error:", err);
+            // Check if already closed by a specific error event
+            if (eventSource.readyState === EventSource.CLOSED) return;
+
+            if (progressTextElement) {
+                 progressTextElement.innerHTML += '<p class="text-danger font-weight-bold">Потеряно соединение с сервером во время обработки.</p>';
+            }
+            if (progressBarContainerElement) progressBarContainerElement.innerHTML = '';
+            if (realtimeFrameImgTag) realtimeFrameImgTag.style.display = 'none';
+            eventSource.close();
+        };
+    }
+
+    // Live Camera Stream Logic
+    const startStreamBtn = document.getElementById('startStreamBtn');
+    const stopStreamBtn = document.getElementById('stopStreamBtn');
+    const videoFeedImg = document.getElementById('videoFeedImg'); // Corrected ID
+    const streamInfoDiv = document.getElementById('streamInfoDiv'); // Corrected ID
+    let isClientStreamActive = false;
+
     if (startStreamBtn) {
         startStreamBtn.addEventListener('click', function() {
+            if (isClientStreamActive) return;
+            isClientStreamActive = true;
             videoFeedImg.src = "{{ url_for('main.video_feed') }}?" + new Date().getTime();
             videoFeedImg.style.display = 'block';
             startStreamBtn.style.display = 'none';
             stopStreamBtn.style.display = 'inline-block';
-            streamInfo.innerHTML = '<p class="text-info">Стрим активен...</p>';
+            streamInfoDiv.innerHTML = '<p class="text-info">Стрим активен...</p>';
         });
     }
 
     if (stopStreamBtn) {
         stopStreamBtn.addEventListener('click', async function() {
-            videoFeedImg.src = "#";
+            if (!isClientStreamActive) return;
+            isClientStreamActive = false;
+
             videoFeedImg.style.display = 'none';
+            videoFeedImg.removeAttribute('src');
+
             stopStreamBtn.style.display = 'none';
             startStreamBtn.style.display = 'inline-block';
-            streamInfo.innerHTML = '<div class="d-flex align-items-center"><div class="spinner-border text-secondary spinner-border-sm" role="status"></div> <p class="text-secondary d-inline-block ml-2 mb-0">Остановка стрима...</p></div>';
+            streamInfoDiv.innerHTML = '<div class="d-flex align-items-center"><div class="spinner-border text-secondary spinner-border-sm"></div> <p class="text-secondary d-inline-block ml-2 mb-0">Остановка стрима...</p></div>';
 
             try {
                 const response = await fetch("{{ url_for('main.end_stream_session') }}", { method: 'POST' });
-                const data = await response.json();
-                if (response.ok) {
-                    if (data.status === 'success') {
-                         streamInfo.innerHTML = `<p class="text-success">Стрим остановлен. Длительность: ${data.duration} сек. Данные сохранены (если были детекции).</p>`;
-                    } else {
-                        streamInfo.innerHTML = `<p class="text-info">${data.message || 'Стрим остановлен.'}</p>`;
-                    }
-
+                const data = await response.json(); // Expecting JSON response
+                if (response.ok && data.status === 'success') {
+                     let message = `<p class="text-success">${data.message || 'Стрим остановлен.'} Длительность: ${data.duration != null ? data.duration.toFixed(2) : 'N/A'} сек.</p>`;
+                     if (data.result_video_url) {
+                         message += `<p><a href="${data.result_video_url}" target="_blank">Просмотреть записанное видео сессии</a></p>`;
+                     }
+                     streamInfoDiv.innerHTML = message;
                 } else {
-                    streamInfo.innerHTML = `<p class="text-warning">Стрим остановлен (возможно, с ошибкой: ${data.message || response.statusText}).</p>`;
+                    streamInfoDiv.innerHTML = `<p class="text-warning">Стрим остановлен (сервер: ${data.message || response.statusText}).</p>`;
                 }
             } catch (error) {
-                 streamInfo.innerHTML = `<p class="text-danger">Ошибка при остановке стрима: ${error.message}</p>`;
+                 console.error("Stop stream fetch error:", error);
+                 streamInfoDiv.innerHTML = `<p class="text-danger">Ошибка при остановке стрима: ${error.message}</p>`;
             }
         });
     }

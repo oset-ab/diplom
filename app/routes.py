@@ -171,17 +171,40 @@ def login():
 @login_required
 def logout():
     user_id = session.get('user_id')
+    current_app.logger.info(f"Logout initiated for user_id: {user_id}")
+
+    # Основная задача logout - это сигнализировать генератору стрима, что пользователь ушел,
+    # и очистить его из активных. Сам генератор в своем finally блоке должен корректно
+    # закрыть VideoWriter и запустить ffmpeg.
+
+    # --- Критическая секция для обновления общих данных стрима ---
+    # Делаем ее максимально быстрой
     with _stream_lock:
-        if user_id in _active_stream_viewers: _active_stream_viewers.discard(user_id)
-        writer = _user_video_writers.pop(user_id, None)
-        if writer and writer.isOpened(): writer.release()
-        _user_session_detections.pop(user_id, None);
-        _user_session_filenames.pop(user_id, None)
-        _user_stream_session_starts.pop(user_id, None);
-        manage_camera_capture()
+        current_app.logger.debug(f"Logout: Acquired _stream_lock for user {user_id}")
+        if user_id in _active_stream_viewers:
+            current_app.logger.info(f"User {user_id} was an active stream viewer. Marking as inactive.")
+            _active_stream_viewers.discard(user_id)
+            # НЕ вызываем здесь writer.release() или ffmpeg напрямую.
+            # Генератор должен это сделать при выходе из своего цикла.
+            # Просто удаляем ссылки, если они еще есть, чтобы предотвратить утечки,
+            # но основной cleanup - в генераторе.
+            _user_video_writers.pop(user_id, None)
+            # _user_session_detections и _user_session_filenames будут очищены в end_stream_session,
+            # или если сессия просто прервалась, данные могут быть потеряны, если не было end_stream_session.
+            # Это компромисс для упрощения.
+            _user_stream_session_starts.pop(user_id, None)
+
+        current_app.logger.debug(f"Logout: Calling manage_camera_capture after user {user_id} marked inactive.")
+        manage_camera_capture()  # Проверить, нужно ли остановить камеру
+    current_app.logger.debug(f"Logout: Released _stream_lock for user {user_id}")
+    # --- Конец критической секции ---
+
     session.clear()
-    if user_id: add_log_entry(event="UserLogout", user_id=user_id)
-    flash('Вы вышли из системы.', 'info');
+    if user_id:
+        add_log_entry(event="UserLogout", user_id=user_id)
+
+    flash('Вы вышли из системы.', 'info')
+    current_app.logger.info(f"Logout complete for user_id: {user_id}. Redirecting to login.")
     return redirect(url_for('main.login'))
 
 
@@ -194,6 +217,8 @@ def dashboard():
 # --- Обработка видеопотока с камеры ---
 def manage_camera_capture():
     global _global_cap
+    import threading
+    _stream_lock = threading.RLock()
     with _stream_lock:
         if _active_stream_viewers and (_global_cap is None or not _global_cap.isOpened()):
             _global_cap = cv2.VideoCapture(0)
